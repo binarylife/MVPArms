@@ -6,6 +6,7 @@ import android.text.TextUtils;
 import com.jess.arms.base.BaseApplication;
 import com.jess.arms.di.module.GlobeConfigModule;
 import com.jess.arms.http.GlobeHttpHandler;
+import com.jess.arms.http.RequestInterceptor;
 import com.jess.arms.utils.UiUtils;
 import com.squareup.leakcanary.LeakCanary;
 import com.squareup.leakcanary.RefWatcher;
@@ -18,7 +19,6 @@ import me.jessyan.mvparms.demo.BuildConfig;
 import me.jessyan.mvparms.demo.di.module.CacheModule;
 import me.jessyan.mvparms.demo.di.module.ServiceModule;
 import me.jessyan.mvparms.demo.mvp.model.api.Api;
-import me.jessyan.rxerrorhandler.handler.listener.ResponseErroListener;
 import okhttp3.Interceptor;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -82,7 +82,7 @@ public class WEApplication extends BaseApplication {
 
 
     /**
-     * 将AppComponent返回出去,供其它地方使用, AppComponent接口中声明的方法返回的实例, 在getAppComponent()拿到对象后都可以直接使用
+     * 将AppComponent返回出去,供其它地方使用, AppComponent接口中声明的方法返回的实例,在getAppComponent()拿到对象后都可以直接使用
      *
      * @return
      */
@@ -93,6 +93,9 @@ public class WEApplication extends BaseApplication {
 
     /**
      * app的全局配置信息封装进module(使用Dagger注入到需要配置信息的地方)
+     * GlobeHttpHandler是在NetworkInterceptor中拦截数据
+     * 如果想将请求参数加密,则必须在Interceptor中对参数进行处理,GlobeConfigModule.addInterceptor可以添加Interceptor
+     *
      * @return
      */
     @Override
@@ -107,12 +110,12 @@ public class WEApplication extends BaseApplication {
                         //这里可以先客户端一步拿到每一次http请求的结果,可以解析成json,做一些操作,如检测到token过期后
                         //重新请求token,并重新执行请求
                         try {
-                            if (!TextUtils.isEmpty(httpResult)) {
+                            if (!TextUtils.isEmpty(httpResult) && RequestInterceptor.isJson(response.body())) {
                                 JSONArray array = new JSONArray(httpResult);
                                 JSONObject object = (JSONObject) array.get(0);
                                 String login = object.getString("login");
                                 String avatar_url = object.getString("avatar_url");
-                                Timber.tag(TAG).w("result ------>" + login + "    ||   avatar_url------>" + avatar_url);
+                                Timber.tag(TAG).w("Result ------> " + login + "    ||   Avatar_url------> " + avatar_url);
                             }
 
                         } catch (JSONException e) {
@@ -128,7 +131,6 @@ public class WEApplication extends BaseApplication {
 //                            .build();
 
 //                    // retry the request
-//
 //                    response.body().close();
                         //如果使用okhttp将新的请求,请求成功后,将返回的response  return出去即可
 
@@ -136,24 +138,19 @@ public class WEApplication extends BaseApplication {
                         return response;
                     }
 
-                    // 这里可以在请求服务器之前可以拿到request,做一些操作比如给request统一添加token或者header
+                    // 这里可以在请求服务器之前可以拿到request,做一些操作比如给request统一添加token或者header以及数据加密等操作
                     @Override
                     public Request onHttpRequestBefore(Interceptor.Chain chain, Request request) {
-                        //如果需要再请求服务器之前做一些操作,则重新返回一个做过操作的的requeat如增加header,不做操作则返回request
+                        //如果需要再请求服务器之前做一些操作,则重新返回一个做过操作的的requeat如增加header,不做操作则直接返回request参数
 
                         //return chain.request().newBuilder().header("token", tokenId)
-//                .build();
+//                               .build();
                         return request;
                     }
                 })
-                .responseErroListener(new ResponseErroListener() {
-                    //     用来提供处理所有错误的监听
-                    //     rxjava必要要使用ErrorHandleSubscriber(默认实现Subscriber的onError方法),此监听才生效
-                    @Override
-                    public void handleResponseError(Context context, Exception e) {
-                        Timber.tag(TAG).w("------------>" + e.getMessage());
-                        UiUtils.SnackbarText("net error");
-                    }
+                .responseErroListener((context, e) -> {
+                    Timber.tag(TAG).w("------------>" + e.getMessage());
+                    UiUtils.SnackbarText("net error");
                 }).build();
     }
 
